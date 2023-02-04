@@ -1,0 +1,3 @@
+name: Riding
+version: '${project.version}'
+main: riding.riding.Riding
