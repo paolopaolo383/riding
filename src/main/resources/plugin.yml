@@ -1,3 +1,8 @@
 name: Riding
 version: '${project.version}'
 main: riding.riding.Riding
+commands:
+  라이딩:
+    usage: /라이딩
+  라이딩로드:
+    usage: /라이딩로드

@@ -2,46 +2,63 @@ package riding.riding;
 
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
+import org.bukkit.Material;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.ConsoleCommandSender;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
-import org.bukkit.entity.Entity;
-import org.bukkit.entity.EntityType;
-import org.bukkit.entity.Player;
+import org.bukkit.entity.*;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.Action;
 import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.*;
+import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.ItemFlag;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.*;
-import java.util.HashMap;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
+
+import static org.bukkit.inventory.ItemFlag.HIDE_ATTRIBUTES;
 
 public final class Riding extends JavaPlugin implements Listener, CommandExecutor {
+    HashMap<UUID, Inventory> inv = new HashMap<>();
+    Short back = 15;
     String userpath;
+    List<String> ridingname = new ArrayList<>();
+    HashMap<String, Short> ridingdur = new HashMap<>();//플러그인에 라이딩 등록
     HashMap<String, Boolean> isplayerdb =new HashMap<>();//있는지 없는지
     HashMap<UUID, List<String>> playerridingentity = new HashMap<>(); //탈 몹의 헤드 이름
     HashMap<UUID,Boolean> isplayermounting = new HashMap<UUID,Boolean>();//타는중인지
-    HashMap<UUID,Entity> playerriding = new HashMap<UUID,Entity>();//타고있는 엔티티
+    HashMap<UUID,ArmorStand> playerriding = new HashMap<UUID,ArmorStand>();//타고있는 엔티티 (파괴할때만 필요)
+    HashMap<UUID,String> selectedriding = new HashMap<UUID,String>();//어떤 라이딩을 탈건지(gui에서 설정)
     ConsoleCommandSender consol = Bukkit.getConsoleSender();
     @Override
     public void onEnable() {
         Bukkit.getPluginManager().registerEvents(this, this);
+        reloadDB();
         for(Player player:Bukkit.getOnlinePlayers())
         {
             isplayermounting.put(player.getUniqueId(), false);
-
+            inv.put(player.getUniqueId(),Bukkit.createInventory(null, 54, "riding"));
+            try {
+                reload(player);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
-        reloadDB();
 
     }
     public void reloadDB()
     {
+        ridingname.clear();
+        ridingdur.clear();
         playerridingentity.clear();
         File pluginfile = new File("plugins","Riding.jar");
         consol.sendMessage(pluginfile.getAbsolutePath().split("Riding.jar")[0]+"Riding");
@@ -59,145 +76,160 @@ public final class Riding extends JavaPlugin implements Listener, CommandExecuto
         String folder2path = pluginfile.getAbsolutePath().split("Riding.jar")[0]+"Riding\\Users";
         userpath = folder2path;
         File Folder2 = new File(folder2path);
-        if (!Folder.exists()) {
+        if (!Folder2.exists()) {
             try{
-                Folder.mkdir(); //폴더 생성합니다.
+                Folder2.mkdir(); //폴더 생성합니다.
                 System.out.println("[Riding]폴더가 생성되었습니다.");
             }
             catch(Exception e){
                 e.getStackTrace();
             }
         }
-        File[] files = Folder2.listFiles();
-        for(File user : files)
+        File Folder3 = new File(folder2path);
+        File[] files = Folder3.listFiles();
+        if(files!=null)
         {
-            String player =user.getName().substring(0,user.getName().lastIndexOf("t")-4);
-            isplayerdb.put(player, true);
+            for(File user : files)
+            {
+                String player =user.getName().substring(0,user.getName().lastIndexOf("t")-4);
+                isplayerdb.put(player, true);
+            }
         }
-        /*
-        File Filepath = folderpath+"\\guisetting.yml";
+
+
+        String Filepath = folderpath+"\\riding.yml";
         File cffile = new File(Filepath);
         if (!cffile.exists()) {	// 파일이 존재하지 않으면 생성
             try {
                 if (cffile.createNewFile())
-                    System.out.println("[guisetting.yml]파일 생성 성공");
+                    System.out.println("[riding.yml]파일 생성 성공");
                 else
-                    System.out.println("[guisetting.yml]파일 생성 실패");
+                    System.out.println("[riding.yml]파일 생성 실패");
             } catch (IOException e) {
                 e.printStackTrace();
             }
         }
-        File file = new File("plugins/PlayerManager", "guisetting.yml");
+        File file = new File("plugins/Riding", "riding.yml");
         FileConfiguration cnf = YamlConfiguration.loadConfiguration(file);
-        consol.sendMessage(ChatColor.YELLOW+"---------------로드---------------");
-        if(cnf.contains("gui")&&cnf.contains("command")){
+        consol.sendMessage(ChatColor.YELLOW+"---------------라이딩 로드---------------");
+
+        if(cnf.contains("riding")){
             //consol.sendMessage("File exist");
             cnf = YamlConfiguration.loadConfiguration(file);
-            List<String> guis = (List<String>) cnf.getList("gui");
-            if(!(guis.isEmpty()))
+            List<String> ridings = (List<String>) cnf.getList("riding");
+            if(!(ridings.isEmpty()))
             {
-                for(String gui: guis)
+                for(String riding: ridings)
                 {
                     try
                     {
-                        if(Integer.valueOf(gui.split("/")[1])==1)//playerhead
-                        {
-                            playerhead = Integer.valueOf(gui.split("/")[0]);
-                        }
-                        if(Integer.valueOf(gui.split("/")[1])==2)//playerjob
-                        {
-                            playerjob = Integer.valueOf(gui.split("/")[0]);
-                            consol.sendMessage(ChatColor.YELLOW+"플레이어 직업은 보류");
-                        }
-                        if(Integer.valueOf(gui.split("/")[1])==3)//playerlevel
-                        {
-                            playerlevel = Integer.valueOf(gui.split("/")[0]);
-                        }
+                        ridingdur.put(riding.split("/")[0],Short.valueOf(riding.split("/")[1]));
+                        ridingname.add(riding.split("/")[0]);
+                        consol.sendMessage(ChatColor.GREEN+riding.split("/")[0]+"이 로드됨");
                     }
                     catch (Exception e)
                     {
-                        consol.sendMessage(ChatColor.RED+gui+"이 로드되지 않음");
+                        consol.sendMessage(ChatColor.RED+riding+"이 로드되지 않음");
                     }
                 }
             }
             else
             {
-                consol.sendMessage(ChatColor.YELLOW+"로드할 gui가 없음");
-            }
-            List<String> command = (List<String>) cnf.getList("command");
-            if(!(command.isEmpty()))
-            {
-                for(String cmdd: command)
-                {
-                    try
-                    {
-                        cmd.put(Integer.valueOf(cmdd.split("/")[0]), cmdd.split("/")[1]);
-                        ItemStack item = createGuidmaItem(Material.valueOf(cmdd.split("/")[2]),ChatColor.GRAY+cmdd.split("/")[3],Short.valueOf(cmdd.split("/")[4]), " ");
-                        cmditem.put(Integer.valueOf(cmdd.split("/")[0]), item);
-                    }
-                    catch (Exception e)
-                    {
-                        consol.sendMessage(ChatColor.RED+cmdd+"이 로드되지 않음");
-                    }
-
-                }
-            }
-            else
-            {
-                consol.sendMessage(ChatColor.YELLOW+"로드할 command가 없음");
+                consol.sendMessage(ChatColor.YELLOW+"로드할 riding이 없음");
             }
         }else{
             //consol.sendMessage("File doesnt exist");
-            String[] list = {"(몇번째칸인지)/(어떤건지1=플레이어 헤드,2=직업,3=마크렙)"};
-            cnf.set("gui", list);
-            String[] lists = {"(몇번째칸인지)/(커맨드)/(메테리얼ex)DIAMOND_SWORD)/(이름)/(내구도)"};
-            cnf.set("command",lists);
+            String[] list = {"(라이딩이름)/(내구도)"};
+            cnf.set("riding", list);
             try {
                 cnf.save(file);
             } catch (IOException e) {
                 e.printStackTrace();
             }
-            //consol.sendMessage("Created");
-        }*/
 
+            //consol.sendMessage("Created");
+        }
+        consol.sendMessage(ChatColor.YELLOW+"---------------라이딩 완료---------------");
     }
     @Override
     public void onDisable() {
         for(Player player:Bukkit.getOnlinePlayers())
         {
             down(player);
+        }
+        //
+
+        for(Player player : Bukkit.getOnlinePlayers())
+        {
+            try
+            {
+                saveplayer(player);
+            }
+            catch (Exception exception)
+            {
+
+            }
+        }
+
+    }
+    @EventHandler
+    public void onquit(PlayerQuitEvent e) {
+        e.getPlayer().closeInventory();
+        down(e.getPlayer());
+        try
+        {
+            saveplayer(e.getPlayer());
+        }
+        catch (Exception exception)
+        {
 
         }
+
+    }
+    public void saveplayer(Player player) throws IOException {
+        File file = new File(userpath+"\\"+ChatColor.stripColor(player.getDisplayName())+".txt");
+        FileWriter fw = new FileWriter(file);
+        BufferedWriter writer = new BufferedWriter(fw);
+
+        for(String str:playerridingentity.get(player.getUniqueId()))
+        {
+            if(str.equalsIgnoreCase(selectedriding.get(player.getUniqueId())))
+            {
+                str = "*"+str;
+            }
+            writer.write(str);
+        }
+
+
+
+        writer.close();
     }
     @Override
-    public boolean onCommand(CommandSender sender, Command command, String s, String[] args)
-    {
-        if(command.getName().equalsIgnoreCase("라이딩리로드"))
+    public boolean onCommand(CommandSender sender, Command command, String s, String[] args) {
+        if(command.getName().equalsIgnoreCase("라이딩"))
+        {
+            Player player = (Player)sender;
+            openInventory(player);
+        }
+        if(command.getName().equalsIgnoreCase("라이딩로드"))
         {
             reloadDB();
-            for(Player player:Bukkit.getOnlinePlayers())
-            {
-                try {
-                    reload(player);
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            }
+
         }
         return true;
     }
 
     @EventHandler
-    public void onquit(PlayerQuitEvent e)
-    {
-        down(e.getPlayer());
-    }
-    @EventHandler
     public void onJoin(PlayerJoinEvent e)
     {
         isplayermounting.put(e.getPlayer().getUniqueId(),false);
+        if(!playerridingentity.containsKey(e.getPlayer().getUniqueId()))
+        {
+            playerridingentity.put(e.getPlayer().getUniqueId(), new ArrayList<String>());
+        }
         Player player = e.getPlayer();
         String playername = ChatColor.stripColor(e.getPlayer().getDisplayName());
+        inv.put(player.getUniqueId(),Bukkit.createInventory(null, 54, "riding"));
         if(isplayerdb.containsKey(playername)&&isplayerdb.get(playername))
         {
             try {
@@ -211,7 +243,7 @@ public final class Riding extends JavaPlugin implements Listener, CommandExecuto
             isplayerdb.put(playername,true);
             File Folder = new File(userpath+"\\"+playername+".txt");
             try{
-                Folder.mkdir(); //폴더 생성합니다.
+                Folder.createNewFile();
             }
             catch(Exception ex){
                 ex.getStackTrace();
@@ -219,6 +251,7 @@ public final class Riding extends JavaPlugin implements Listener, CommandExecuto
         }
 
     }
+
     public void reload(Player player) throws IOException {
         down(player);
         player.closeInventory();
@@ -226,11 +259,21 @@ public final class Riding extends JavaPlugin implements Listener, CommandExecuto
                 new FileReader(userpath+"\\"+ChatColor.stripColor(player.getDisplayName())+".txt")
         );
         String str;
-        playerridingentity.get(player.getUniqueId()).clear();
+        playerridingentity.put(player.getUniqueId(),new ArrayList<String>());
         while ((str = userfile.readLine())!=null)
         {
-            playerridingentity.get(player.getUniqueId()).add(str);
+            if(str.charAt(0)=='*')
+            {
+                selectedriding.put(player.getUniqueId(),str.substring(1));
+                playerridingentity.get(player.getUniqueId()).add(str.substring(1));
+            }
+            else
+            {
+                playerridingentity.get(player.getUniqueId()).add(str);
+            }
+
         }
+        userfile.close();
     }
     @EventHandler
     public void onPlayerpassivedown(PlayerToggleSneakEvent e)
@@ -258,15 +301,27 @@ public final class Riding extends JavaPlugin implements Listener, CommandExecuto
         }
         else if(!player.isSneaking())
         {
+            
+            if((!selectedriding.containsKey(player.getUniqueId()))||selectedriding.get(player.getUniqueId())==null) {
+                player.sendMessage(ChatColor.YELLOW+"선택된 라이딩이 없습니다.");
+                return;
+            }
             isplayermounting.put(player.getUniqueId(),true);
 
-            Entity entity = Bukkit.getWorld("world").spawnEntity(player.getLocation(), EntityType.HORSE);
-            
+            ArmorStand entity = (ArmorStand)Bukkit.getWorld("world").spawnEntity(player.getLocation(), EntityType.ARMOR_STAND);
+
+            entity.setHelmet(getarmorstandhead(selectedriding.get(player.getUniqueId())));
             playerriding.put(player.getUniqueId(),entity);
             entity.setPassenger(player);
 
         }
 
+    }
+    public ItemStack getarmorstandhead(String ridingname)
+    {
+        ItemStack ridingheaditem = new ItemStack(Material.IRON_AXE);
+        ridingheaditem.setDurability(ridingdur.get(ridingname));
+        return ridingheaditem;
     }
     public void down(Player player)
     {
@@ -275,6 +330,123 @@ public final class Riding extends JavaPlugin implements Listener, CommandExecuto
             isplayermounting.put(player.getUniqueId(),false);
 
             playerriding.get(player.getUniqueId()).remove();
+            playerriding.put(player.getUniqueId(),null);
+        }
+    }
+
+    public void initializeItems(UUID uuid) {
+        inv.get(uuid).clear();
+        int i = 0;
+        for(String ride:ridingname)
+        {
+            if(playerridingentity.containsKey(uuid)&&playerridingentity.get(uuid).contains(ride))//플레이어가 가지고있음
+            {
+                if(selectedriding.containsKey(uuid)&&ride.equalsIgnoreCase(selectedriding.get(uuid)))
+                {
+                    inv.get(uuid).setItem(i,createUIitem(Material.IRON_AXE, ride, ridingdur.get(ride), ChatColor.GREEN+"[selected]"));
+                }
+                else
+                {
+                    inv.get(uuid).setItem(i,createUIitem(Material.IRON_AXE, ride, ridingdur.get(ride)));
+                }
+
+            }
+            else//안가짐
+            {
+                inv.get(uuid).setItem(i,createUIitem(Material.IRON_AXE, ChatColor.MAGIC+"???", (short)100, ChatColor.DARK_GRAY+"해금되지 않음"));
+            }
+            i++;
+        }
+        for(;i<54;i++)
+        {
+            inv.get(uuid).setItem(i,createUIitem(Material.IRON_AXE," ", (short)64));
+        }
+        inv.get(uuid).setItem(i-1, createUIitem(Material.IRON_AXE," ", back));
+    }
+    protected ItemStack createUIitem(final Material material, final String name,final short damage, final String... lore) {
+        final ItemStack item = new ItemStack(material, 1,damage);
+        final ItemMeta meta = item.getItemMeta();
+        meta.setUnbreakable(true);
+        meta.addItemFlags(HIDE_ATTRIBUTES);
+        meta.addItemFlags(ItemFlag.HIDE_UNBREAKABLE);
+        // Set the name of the item
+        meta.setDisplayName(name);
+
+        meta.setLore(Arrays.asList(lore));
+
+        item.setItemMeta(meta);
+
+        return item;
+    }
+    public void openInventory(final HumanEntity ent) {
+        initializeItems(ent.getUniqueId());
+        ent.openInventory(inv.get(ent.getUniqueId()));
+    }
+    @EventHandler
+    public void onRightclick(PlayerInteractEvent e)
+    {
+        try
+        {
+            if(e.getItem().getType().equals(Material.IRON_AXE)&&e.getItem().getItemMeta().getDisplayName().startsWith("[탈것]"))
+            {
+
+            }
+            else
+            {
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            return;
+        }
+        if(e.getAction()== Action.RIGHT_CLICK_AIR||e.getAction()==Action.RIGHT_CLICK_BLOCK)
+        {
+            playerridingentity.get(e.getPlayer().getUniqueId()).add(e.getItem().getItemMeta().getDisplayName().substring(4));
+
+            e.getPlayer().getInventory().setItemInMainHand(null);
+            e.getPlayer().sendMessage(ChatColor.GREEN+"등록되었습니다.");
+        }
+    }
+    @EventHandler
+    public void onItemclick(InventoryClickEvent e)
+    {
+        try{
+            if(e.getClickedInventory().getItem(53).getType().equals(Material.IRON_AXE)&&e.getClickedInventory().getItem(53).getDurability()==back)
+            {
+
+            }
+            else
+            {
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            return;
+        }
+        Player player = (Player)e.getWhoClicked();
+        e.setCancelled(true);
+        if(playerridingentity.get(player.getUniqueId()).contains(e.getCurrentItem().getItemMeta().getDisplayName()))
+        {
+            try
+            {
+                if(ChatColor.stripColor(e.getCurrentItem().getItemMeta().getLore().get(0)).equals("[selected]"))
+                {
+                    selectedriding.put(player.getUniqueId(),null);
+                    initializeItems(player.getUniqueId());
+                }
+                else
+                {
+                    selectedriding.put(player.getUniqueId(),e.getCurrentItem().getItemMeta().getDisplayName());
+                    initializeItems(player.getUniqueId());
+                }
+            }
+            catch (Exception ex)
+            {
+                selectedriding.put(player.getUniqueId(),e.getCurrentItem().getItemMeta().getDisplayName());
+                initializeItems(player.getUniqueId());
+            }
         }
     }
 }
