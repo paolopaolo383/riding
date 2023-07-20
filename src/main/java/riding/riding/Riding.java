@@ -1,5 +1,8 @@
 package riding.riding;
-
+import net.milkbowl.vault.economy.Economy;
+import net.minecraft.server.v1_12_R1.IChatBaseComponent;
+import net.minecraft.server.v1_12_R1.PacketPlayOutPlayerListHeaderFooter;
+import net.minecraft.server.v1_12_R1.PlayerConnection;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
@@ -9,11 +12,14 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.command.ConsoleCommandSender;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
-import org.bukkit.entity.*;
+import org.bukkit.craftbukkit.v1_12_R1.entity.CraftPlayer;
+import org.bukkit.entity.ArmorStand;
+import org.bukkit.entity.EntityType;
+import org.bukkit.entity.HumanEntity;
+import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
-import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.*;
 import org.bukkit.inventory.Inventory;
@@ -21,8 +27,10 @@ import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitRunnable;
 
 import java.io.*;
+import java.lang.reflect.Field;
 import java.util.*;
 
 import static org.bukkit.inventory.ItemFlag.HIDE_ATTRIBUTES;
@@ -55,8 +63,8 @@ public final class Riding extends JavaPlugin implements Listener, CommandExecuto
         }
 
     }
-    public void reloadDB()
-    {
+
+    public void reloadDB() {
         ridingname.clear();
         ridingdur.clear();
         playerridingentity.clear();
@@ -219,9 +227,31 @@ public final class Riding extends JavaPlugin implements Listener, CommandExecuto
         return true;
     }
 
+    public void tabfooterstring(Player player , String footer){
+        CraftPlayer craftplayer = (CraftPlayer) player;
+        PlayerConnection connection = craftplayer.getHandle().playerConnection;
+        IChatBaseComponent headerJson = IChatBaseComponent.ChatSerializer.a("{\"text\":\"\"}");
+        IChatBaseComponent footerJson = IChatBaseComponent.ChatSerializer.a("{\"text\":\"" + footer + "\"}");
+        PacketPlayOutPlayerListHeaderFooter packet = new PacketPlayOutPlayerListHeaderFooter();
+        try {
+            Field headerField = packet.getClass().getDeclaredField("a");
+            headerField.setAccessible(true);
+            headerField.set(packet, headerJson);
+            headerField.setAccessible(!headerField.isAccessible());
+
+            Field footerField = packet.getClass().getDeclaredField("b");
+            footerField.setAccessible(true);
+            footerField.set(packet, footerJson);
+            footerField.setAccessible(!footerField.isAccessible());
+        } catch (Exception exc) {
+            exc.printStackTrace();
+        }
+        connection.sendPacket(packet);
+    }
+
     @EventHandler
-    public void onJoin(PlayerJoinEvent e)
-    {
+    public void onJoin(PlayerJoinEvent e) {
+
         isplayermounting.put(e.getPlayer().getUniqueId(),false);
         if(!playerridingentity.containsKey(e.getPlayer().getUniqueId()))
         {
@@ -249,6 +279,26 @@ public final class Riding extends JavaPlugin implements Listener, CommandExecuto
                 ex.getStackTrace();
             }
         }
+
+        new BukkitRunnable()
+        {
+
+            @Override
+            public void run()
+            {
+                if(!player.isOnline())
+                {
+                    this.cancel();
+                }
+
+                Economy economy = VaultEconomy.getEconomy();
+                int money = (int)economy.getBalance(player);
+
+                player.sendMessage(String.valueOf(money));
+                tabfooterstring(player, ChatColor.YELLOW+"돈 : "+String.valueOf(money));
+            }
+
+        }.runTaskTimer(this, 0L, 1L);
 
     }
 
@@ -281,16 +331,7 @@ public final class Riding extends JavaPlugin implements Listener, CommandExecuto
         down(e.getPlayer());
     }
     @EventHandler
-    public void onArmorstanddamaged(EntityDamageEvent e)
-    {
-        if(e.getEntity().getType()==EntityType.ARMOR_STAND)
-        {
-            e.setCancelled(true);
-        }
-    }
-    @EventHandler
-    public void onPlayeritemwasteEvent(PlayerDropItemEvent e)
-    {
+    public void onPlayeritemwasteEvent(PlayerDropItemEvent e) {
         e.setCancelled(true);
         Player player = e.getPlayer();
         if(isplayermounting.get(player.getUniqueId()))
@@ -309,22 +350,22 @@ public final class Riding extends JavaPlugin implements Listener, CommandExecuto
             isplayermounting.put(player.getUniqueId(),true);
 
             ArmorStand entity = (ArmorStand)Bukkit.getWorld("world").spawnEntity(player.getLocation(), EntityType.ARMOR_STAND);
-
+            entity.setAI(false);
+            entity.setInvulnerable(true);
             entity.setHelmet(getarmorstandhead(selectedriding.get(player.getUniqueId())));
             playerriding.put(player.getUniqueId(),entity);
             entity.setPassenger(player);
 
+
         }
 
     }
-    public ItemStack getarmorstandhead(String ridingname)
-    {
+    public ItemStack getarmorstandhead(String ridingname) {
         ItemStack ridingheaditem = new ItemStack(Material.IRON_AXE);
         ridingheaditem.setDurability(ridingdur.get(ridingname));
         return ridingheaditem;
     }
-    public void down(Player player)
-    {
+    public void down(Player player) {
         if(isplayermounting.get(player.getUniqueId()))
         {
             isplayermounting.put(player.getUniqueId(),false);
@@ -383,8 +424,7 @@ public final class Riding extends JavaPlugin implements Listener, CommandExecuto
         ent.openInventory(inv.get(ent.getUniqueId()));
     }
     @EventHandler
-    public void onRightclick(PlayerInteractEvent e)
-    {
+    public void onRightclick(PlayerInteractEvent e) {
         try
         {
             if(e.getItem().getType().equals(Material.IRON_AXE)&&e.getItem().getItemMeta().getDisplayName().startsWith("[탈것]"))
@@ -409,8 +449,7 @@ public final class Riding extends JavaPlugin implements Listener, CommandExecuto
         }
     }
     @EventHandler
-    public void onItemclick(InventoryClickEvent e)
-    {
+    public void onItemclick(InventoryClickEvent e) {
         try{
             if(e.getClickedInventory().getItem(53).getType().equals(Material.IRON_AXE)&&e.getClickedInventory().getItem(53).getDurability()==back)
             {

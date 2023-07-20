@@ -1,6 +1,7 @@
 name: Riding
 version: '1.0-SNAPSHOT'
 main: riding.riding.Riding
+depend: [ProtocolLib]
 commands:
   라이딩:
     usage: /라이딩
